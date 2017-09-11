@@ -1,103 +1,336 @@
-# jemcgrath1/vpnrouter
+=======
+Changes 2017
+=======
 
-[![](https://images.microbadger.com/badges/image/jemcgrath1/vpnrouter.svg)](https://microbadger.com/images/jemcgrath1/vpnrouter "Get your own image badge on microbadger.com")[![](https://images.microbadger.com/badges/version/jemcgrath1/vpnrouter.svg)](https://microbadger.com/images/jemcgrath1/vpnrouter "Get your own version badge on microbadger.com")[![](https://images.microbadger.com/badges/commit/jemcgrath1/vpnrouter.svg)](https://microbadger.com/images/jemcgrath1/vpnrouter "Get your own commit badge on microbadger.com")
+Obtained original cidrize file from https://github.com/jathanism/cidrize did not want to fork entire project.
 
-This image creates an OpenVPN Client container that can be used to connect to your VPN provider (expressvpn / PIA etc). I built this to allow my other docker containers to treat this container like a vpnrouter.
+**Fixed cidrize.py 2017/09/12 to now function correctly with Python 3.X - jemcgrath1.** 
 
-This works really well, for providng the same VPN service to multiple containers and/or running multiple vpnrouter containers on the same host.
+**Submitting  request to have this change put back into master 2017/09/12 - jemcgrath1**  
 
-It is based on Alpine 3.6, for shell access whilst the container is running use `docker exec -it vpnrouter /bin/bash`.
+=======
+CIDRIZE
+=======
 
-![OpenVPN](https://raw.githubusercontent.com/jemcgrath1/vpnrouter/master/openvpntech_logo1.png)
+Intelligently parse IPv4/IPv6 addresses, CIDRs, ranges, and wildcard matches to
+attempt return a valid list of IP addresses.
 
-## Usage
+The ``cidrize()`` function does all the work trying to parse IP addresses correctly.
 
-```
-docker create \
---name=vpnrouter \
---net=vpn_nw \
---restart=always
---device /dev/net/tun
--v <path to vpn provider ovpn/config file(s)>:/vpn \
--v /etc/localtime:/etc/localtime:ro \
--e TZ=<timezone> \
--e OPENVPN_CONFIG_FILE=<name of ovpn file to use xyz.ovpn> \
--e OPENVPN_USERNAME=<username from vpn provider> \
--e OPENVPN_PASSWORD=<password from vpn provider> \
-jemcgrath1/vpnrouter
-```
-  <br />
+Supported input formats
+-----------------------
 
-## Parameters
+Input is very flexible and can be of any of the following formats::
 
-The following provides more details on the parameters of the containerL
-* `--name` - Name the container
-* `--net=vpn_nw` IMPORTANT - See Important Notes, you will need to create a *user-defined* network
-* `--restart=always` - Apply a restart policy
-* `--device /dev/net/tun` - Use the local tun device
-* `-v /vpn` - The path where vpnrouter can find ovpn/config file(s) from your vpn provider
-* `-v /etc/localtime:/etc/localtime:ro` - Read the localtime (Read Only)
-* `-e TZ` - For timezone information eg Europe/London, etc
-* `-e OPENVPN_CONFIG_FILE` - The full name of the ovpn or config file from vpn provider i.e. `xyz.ovpn`
-* `-e OPENVPN_USERNAME` - The username from your vpn provider to use the ovpn/config file
-* `-e OPENVPN_PASSWORD` - The password from your vpn provider to use the ovpn/config file
+    192.0.2.18  
+    192.0.20.64/26
+    192.0.2.80-192.0.2.85
+    192.0.2.170-175
+    192.0.2.8[0-5]
+    192.0.2.[5678]
+
+Hyphenated ranges do not need to form a CIDR block but the starting number must
+be of lower value than the end. The ``netaddr`` module does most of the heavy
+lifting for us here.
+
+Unsupported formats
+-------------------
+
+Network mask (e.g. 192.0.2.0 255.255.255.0) and host mask (aka reverse mask,
+192.0.2.0 0.0.0.255) notation are not accepted at this time.
+
+The cidrize function returns a list of consolidated ``netaddr.IPNetwork``
+objects. By default parsing exceptions will raise a ``CidrizeError`` (with
+default argument of ``modular=True``). You may pass ``modular=False`` to cause
+exceptions to be stripped and the error text will be returned as a list. This
+is intended for use with scripts or APIs where receiving exceptions would not
+be preferred.
+
+The module may also be run as a script for debugging purposes.
+
+============
+Dependencies
+============
+
+:`netaddr <http://pypi.python.org/pypi/netaddr/>`_: Pythonic manipulation of
+IPv4, IPv6, CIDR, EUI and MAC network addresses
+
+=====
+Usage 
+=====
+
+Fire up your trusty old Python interpreter and follow along!
+
+::
+
+    >>> from cidrize import cidrize
+
+Old-fashioned CIDR
+------------------
+
+::
+
+    >>> cidrize("1.2.3.4")
+    [IPNetwork('1.2.3.4/32')]
+
+Hyphenated range (default, strict=False)
+----------------------------------------
+
+::
+
+    >>> cidrize("2.4.6.8-2.4.6.80")
+    [IPNetwork('2.4.6.0/25')]
+
+Hyphenated range strict (strict=True)
+----------------------------------------
+
+::
+
+    >>> cidrize("2.4.6.8-2.4.6.80", strict=True)
+    [IPNetwork('2.4.6.8/29'), IPNetwork('2.4.6.16/28'), 
+    IPNetwork('2.4.6.32/27'), IPNetwork('2.4.6.64/28'), 
+    IPNetwork('2.4.6.80/32')]
+
+Wildcard
+--------
+
+You may provide wildcards using asterisks. This is limited to the 4th and final octet only::
+
+    >>> cidrize("15.63.148.*")
+    [IPNetwork('15.63.148.0/24')]
+
+Bracketed range
+---------------
+
+::
+
+    >>> cidrize("21.43.180.1[40-99]")
+    [IPNetwork('21.43.180.140/30'), IPNetwork('21.43.180.144/28'), 
+    IPNetwork('21.43.180.160/27'), IPNetwork('21.43.180.192/29')]
+
+Bad!
+----
+
+Bad CIDR prefixes are rejected outright::
+
+    >>> cidrize("1.2.3.38/40")
+    Traceback (most recent call last):
+    File "<stdin>", line 1, in <module>
+    File "cidrize.py", line 145, in cidrize
+        raise CidrizeError(err)
+    cidrize.CidrizeError: CIDR prefix /40 out of range for IPv4!
+
+Wack range?!
+------------
+
+Ranges must always start from lower to upper bound, or this happens::
+
+    >>> cidrize("1.2.3.4-0")
+    Traceback (most recent call last):
+      File "<stdin>", line 1, in <module>
+      File "cidrize.py", line 145, in cidrize
+        raise CidrizeError(err)
+    cidrize.CidrizeError: lower bound IP greater than upper bound!
+
+=========
+Cidr Tool
+=========
+
+The cidrize package also comes with the ``cidr`` command, which has two basic operations. 
+
+Simple output::
+
+    % cidr 1.2.3.4/30
+    1.2.3.4/30
+
+Verbose output::
+
+    % cidr -v 1.2.3.4/30
+    Spanning CIDR:          1.2.3.4/30
+    Block Start/Network:    1.2.3.4
+    1st host:               1.2.3.5
+    Gateway:                1.2.3.6
+    Block End/Broadcast:    1.2.3.7
+    DQ Mask:                255.255.255.252
+    Cisco ACL Mask:         0.0.0.3
+    # of hosts:             2
+    Explicit CIDR blocks:   1.2.3.4/30
+
+And that's that!
 
 
+=======
+License
+=======
 
-## Important Notes
-
-* This container has been built to use a *user defined* network called vpn_nw. This needs to be created **prior** to starting the container.
-This can be created by executing the docker command:  
- `docker network create --driver bridge vpn_nw`
-
-* If you have connectivity issues, please try creating the container with an addtional dns flag as follows eg. Googles DNS `--dns 8.8.4.4`
-
-* Running it on a NAS. This particular container works perfectly on my QNAP NAS without interfering with the existing VPN running on the NAS itself.
-
-* Automatic login to VPN - you may need to edit your ovpn/config file(s) to add the following command to allow automatic login to your vpn provider
-
- * existing ovpn/config file contains the following line:  
-`auth-user-pass`
-
- * Modify the auth-user-pass line in the ovpn/config file to include the following path:  
- `auth-user-pass  /config/openvpn-credentials.txt`  
- This tells the OpenVPN client to read the username/password you have provided as an environment vairiable, rather than waiting for user input from the keyboard.
+Cidrize is licensed under the `BSD 3-Clause License <http://www.opensource.org/licenses/BSD-3-Clause>`_. Please see ``LICENSE.rst``
+for the details.
 
 
-**Connecting other containers to vpnrouter container**  
+=======
+Changes 2017
+=======
 
-  :bangbang: To connect other containers to the vpn router, you will need to ensure that the other containers are started with `--net=container:vpnrouter` or the name of the vpnrouter container. Personally I like to name them by VPN exit location so I know where each router is directed.
+**Fixed cidrize.py 2017/09/12 to now function correctly with Python 3.X - jemcgrath1.** 
 
-  :bangbang: In addition, if you were planning to connect other containers (i.e transmission, sonarr etc) to the vpnrouter container, you **MUST** expose the ports required for application on the **vpnrouter** container before joing the containers.
+**Submitting  request to have this change put back into master 2017/09/12 - jemcgrath1**  
 
-   *i.e.*  To do this you would need to add the following additional ports to the vpnrouter create statement so that when you connect the transmission container vpnrouter makes the following ports are visible. For example you would add the following ports for Transmission:  
-  `-p 9091:9091 -p 51413:51413 -p 51413:51413/udp `
- <br />
- <br />
- With these additional ports added to the vpnrouter container, you could then do something like (using the wonderful (linuxserver images):<br /><br />
- ` docker create --name=transmission_vpn --net=container:vpnrouter --restart=always -v <path to data>:/config -v <path to downloads>:/downloads -v <path to watch>:/watch -e PGID=<gid> -e PUID=<uid> -e TZ=<timezone> linuxserver/transmission:latest`
- 
- The transmission web interface would then be available on TCP 9091 of the **vpnrouter** container, not the transmission container, and all the transmission traffic outside of your network would be going over the vpn!
- <br /><br />
- **Enjoy!!**
+=======
+CIDRIZE
+=======
+
+Intelligently parse IPv4/IPv6 addresses, CIDRs, ranges, and wildcard matches to
+attempt return a valid list of IP addresses.
+
+The ``cidrize()`` function does all the work trying to parse IP addresses correctly.
+
+Supported input formats
+-----------------------
+
+Input is very flexible and can be of any of the following formats::
+
+    192.0.2.18  
+    192.0.20.64/26
+    192.0.2.80-192.0.2.85
+    192.0.2.170-175
+    192.0.2.8[0-5]
+    192.0.2.[5678]
+
+Hyphenated ranges do not need to form a CIDR block but the starting number must
+be of lower value than the end. The ``netaddr`` module does most of the heavy
+lifting for us here.
+
+Unsupported formats
+-------------------
+
+Network mask (e.g. 192.0.2.0 255.255.255.0) and host mask (aka reverse mask,
+192.0.2.0 0.0.0.255) notation are not accepted at this time.
+
+The cidrize function returns a list of consolidated ``netaddr.IPNetwork``
+objects. By default parsing exceptions will raise a ``CidrizeError`` (with
+default argument of ``modular=True``). You may pass ``modular=False`` to cause
+exceptions to be stripped and the error text will be returned as a list. This
+is intended for use with scripts or APIs where receiving exceptions would not
+be preferred.
+
+The module may also be run as a script for debugging purposes.
+
+============
+Dependencies
+============
+
+:`netaddr <http://pypi.python.org/pypi/netaddr/>`_: Pythonic manipulation of
+IPv4, IPv6, CIDR, EUI and MAC network addresses
+
+=====
+Usage 
+=====
+
+Fire up your trusty old Python interpreter and follow along!
+
+::
+
+    >>> from cidrize import cidrize
+
+Old-fashioned CIDR
+------------------
+
+::
+
+    >>> cidrize("1.2.3.4")
+    [IPNetwork('1.2.3.4/32')]
+
+Hyphenated range (default, strict=False)
+----------------------------------------
+
+::
+
+    >>> cidrize("2.4.6.8-2.4.6.80")
+    [IPNetwork('2.4.6.0/25')]
+
+Hyphenated range strict (strict=True)
+----------------------------------------
+
+::
+
+    >>> cidrize("2.4.6.8-2.4.6.80", strict=True)
+    [IPNetwork('2.4.6.8/29'), IPNetwork('2.4.6.16/28'), 
+    IPNetwork('2.4.6.32/27'), IPNetwork('2.4.6.64/28'), 
+    IPNetwork('2.4.6.80/32')]
+
+Wildcard
+--------
+
+You may provide wildcards using asterisks. This is limited to the 4th and final octet only::
+
+    >>> cidrize("15.63.148.*")
+    [IPNetwork('15.63.148.0/24')]
+
+Bracketed range
+---------------
+
+::
+
+    >>> cidrize("21.43.180.1[40-99]")
+    [IPNetwork('21.43.180.140/30'), IPNetwork('21.43.180.144/28'), 
+    IPNetwork('21.43.180.160/27'), IPNetwork('21.43.180.192/29')]
+
+Bad!
+----
+
+Bad CIDR prefixes are rejected outright::
+
+    >>> cidrize("1.2.3.38/40")
+    Traceback (most recent call last):
+    File "<stdin>", line 1, in <module>
+    File "cidrize.py", line 145, in cidrize
+        raise CidrizeError(err)
+    cidrize.CidrizeError: CIDR prefix /40 out of range for IPv4!
+
+Wack range?!
+------------
+
+Ranges must always start from lower to upper bound, or this happens::
+
+    >>> cidrize("1.2.3.4-0")
+    Traceback (most recent call last):
+      File "<stdin>", line 1, in <module>
+      File "cidrize.py", line 145, in cidrize
+        raise CidrizeError(err)
+    cidrize.CidrizeError: lower bound IP greater than upper bound!
+
+=========
+Cidr Tool
+=========
+
+The cidrize package also comes with the ``cidr`` command, which has two basic operations. 
+
+Simple output::
+
+    % cidr 1.2.3.4/30
+    1.2.3.4/30
+
+Verbose output::
+
+    % cidr -v 1.2.3.4/30
+    Spanning CIDR:          1.2.3.4/30
+    Block Start/Network:    1.2.3.4
+    1st host:               1.2.3.5
+    Gateway:                1.2.3.6
+    Block End/Broadcast:    1.2.3.7
+    DQ Mask:                255.255.255.252
+    Cisco ACL Mask:         0.0.0.3
+    # of hosts:             2
+    Explicit CIDR blocks:   1.2.3.4/30
+
+And that's that!
 
 
-## Info
+=======
+License
+=======
 
-* To monitor the logs of the container in realtime
-
-`docker logs -f vpnrouter`.
-
-* Container version number
-
-`docker inspect -f '{{ index .Config.Labels "build_version" }}' vpnrouter`
-
-* Image version number
-
-`docker inspect -f '{{ index .Config.Labels "build_version" }}' jemcgrath1/vpnrouter`
-
-## Versions
-
-+ **2017.09.4** - Initial Release - Tested with Expressvpn and PIA
+Cidrize is licensed under the `BSD 3-Clause License <http://www.opensource.org/licenses/BSD-3-Clause>`_. Please see ``LICENSE.rst``
+for the details.
 
 
