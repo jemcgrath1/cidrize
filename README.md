@@ -2,11 +2,13 @@
 Changes 2017
 =======
 
-Obtained original cidrize file from https://github.com/jathanism/cidrize did not want to fork entire project.
+Obtained original cidrize file from https://github.com/jathanism/cidrize as I did not want to fork entire project.
+Have advised jathanism that I have updated the component I needed if he wishes to reimport it.
+
 
 **Fixed cidrize.py 2017/09/12 to now function correctly with Python 3.X - jemcgrath1.** 
 
-**Submitting  request to have this change put back into master 2017/09/12 - jemcgrath1**  
+**Advised jathanism to have this change put back into master 2017/09/12 - jemcgrath1**  
 
 =======
 CIDRIZE
